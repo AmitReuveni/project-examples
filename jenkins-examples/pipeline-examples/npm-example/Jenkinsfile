@@ -1,4 +1,4 @@
-def rtServer, buildInfo, rtGradle
+def rtServer, buildInfo, rtNpm
 
 pipeline {
     agent { label 'master' }
