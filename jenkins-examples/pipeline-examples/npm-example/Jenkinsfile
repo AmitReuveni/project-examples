@@ -2,65 +2,78 @@ def rtServer, buildInfo, rtNpm
 
 pipeline {
     agent { label 'master' }
+    tools {
+      nodejs 'NJS11'
+    }
     parameters {
-        //def server = Artifactory.server SERVER_ID
-        //def rtNpm = Artifactory.newNpmBuild()
-        //def buildInfo
         string (name: 'ART_URL', defaultValue: 'http://localhost:8081/artifactory', description: 'Artifactory where artifacts will be deployed/resolved')
         string (name: 'ART_USER', defaultValue: 'admin', description: 'Artifactory user for deploy/resolve artifacts')
         string (name: 'ART_PASSWORD', defaultValue: 'password', description: 'Artifactory password for deploy/resolve artifacts')
-        string (name: 'ART_RELEASE_REPO', defaultValue: 'libs-release', description: 'Virtual Repository where artifacts will be deployed/resolved (Releases)')
-        string (name: 'ART_SNAPSHOT_REPO', defaultValue: 'libs-snapshot', description: 'Virtual Repository where artifacts will be deployed/resolved (Snapshots)')
+        string (name: 'ART_REPO', defaultValue: 'npm', description: 'Virtual Repository where artifacts will be deployed/resolved (Releases)')
         booleanParam (name: 'XRAY_SCAN', defaultValue: false, description: 'Scan artifacts using Xray')
         booleanParam (name: 'FAIL_BUILD', defaultValue: false, description: 'Fail build if any violation is found in Xray')
     }
     
-    stage('Init properties'){
-        steps {
-            script {
-                rtServer = Artifactory.newServer url: "${params.ART_URL}", username: "${params.ART_USER}", password: "${params.ART_PASSWORD}"
-                rtNpm = Artifactory.newNpmBuild()
-                buildInfo = Artifactory.newBuildInfo()
-                // This variables should be PARAMETERIZED
-                rtNpm.deployer repo: 'npm-local', server: rtServer
-                rtNpm.resolver repo: 'npm-remote', server: rtServer
-                rtNpm.deployer.deployArtifacts = false
-                rtNpm.tool = 'M3'
+    stages {
+        stage('Init properties'){
+            steps {
+                script {
+                    rtServer = Artifactory.newServer url: "${params.ART_URL}", username: "${params.ART_USER}", password: "${params.ART_PASSWORD}"
+                    rtNpm = Artifactory.newNpmBuild()
+                    buildInfo = Artifactory.newBuildInfo()
+                    // This variables should be PARAMETERIZED
+                    rtNpm.deployer repo: 'npm-local', server: rtServer
+                    rtNpm.resolver repo: 'npm-remote', server: rtServer
+                    rtNpm.deployer.deployArtifacts = false
+                    rtNpm.executablePath = (String) "$NODEJS_HOME/bin/npm"
+                }
             }
         }
-    }
-    
-    stage ('Checkout') {
-        steps {
-            git url: 'https://github.com/JFrog/project-examples.git'
+        
+        stage ('Checkout') {
+            steps {
+                git url: 'https://github.com/JFrog/project-examples.git'
+                }
         }
-    }
-
-    stage ('Install npm') {
-        rtNpm.install buildInfo: buildInfo, path: 'npm-example'
-    }
-
-    stage ('Publish npm') {
-        rtNpm.publish buildInfo: buildInfo, path: 'npm-example'
-    }
-
-    stage ('Publish build info') {
-        server.publishBuildInfo buildInfo
-    }
-    
-    stage('Xray Scan'){
-        when {
-            expression { return params.XRAY_SCAN }
+        
+        stage ('Npm Install') {
+            steps {
+                script{
+                    rtNpm.install buildInfo: buildInfo, path: "npm-example"
+                }
+            }
         }
-        steps {
-            script {
-                xrayConfig = [
-                    'buildName'     : buildInfo.name,
-                    'buildNumber'    : buildInfo.number,
-                    'failBuild'     : "${params.FAIL_BUILD}".toBoolean()
-                ]
-                xrayResults = rtServer.xrayScan xrayConfig
-                echo xrayResults as String
+    
+        stage ('Publish npm') {
+            steps {
+                script {
+                    rtNpm.publish buildInfo: buildInfo, path: 'npm-example'
+                }
+            }
+        }
+    
+        stage ('Publish build info') {
+            steps {
+                script {
+                    rtServer.publishBuildInfo buildInfo
+                }
+            }
+        }
+        
+        stage('Xray Scan'){
+            when {
+                expression { return params.XRAY_SCAN }
+            }
+            steps {
+                script {
+                    xrayConfig = [
+                        'buildName'     : buildInfo.name,
+                        'buildNumber'    : buildInfo.number,
+                        'failBuild'     : "${params.FAIL_BUILD}".toBoolean()
+                    ]
+                    xrayResults = rtServer.xrayScan xrayConfig
+                    echo xrayResults as String
+                }
             }
         }
     }
